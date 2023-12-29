@@ -28,7 +28,7 @@
 ![4](https://github.com/shangtianfei/xigua_down/assets/24507317/7fcee0b1-4297-4e64-91f9-3439d598144b)
 
 
-        e.g.
+    e.g.
 ![5](https://github.com/shangtianfei/xigua_down/assets/24507317/5122ed18-011a-47d6-8fba-15b33c497b01)
 
 
