@@ -32,6 +32,27 @@
     e.g.
 ![5](https://github.com/shangtianfei/xigua_down/assets/24507317/5122ed18-011a-47d6-8fba-15b33c497b01)
 
+##### 桌面
+
+使用默认python版本创建虚拟环境
+```
+virtualenv venv
+
+.\venv\Scripts\activate
+
+依赖处理
+
+pip install -r requirements.txt
+pip freeze > requirements.txt
+
+打包处理
+
+pyinstaller --noconsole --onefile  app.xigua.qt.py
+
+退出虚拟环境
+deactivate
+```
+
 
 ## 下载多个视频
 todo。。。

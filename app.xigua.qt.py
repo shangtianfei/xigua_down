@@ -3,13 +3,16 @@ import json
 import os
 import re
 import sys
-# from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox
-from PyQt5.QtCore import Qt
+import threading
+import webbrowser
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget
+
+
  
+
 class MyGUI(QWidget):
     def __init__(self):
         super().__init__()
@@ -17,10 +20,11 @@ class MyGUI(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('简单GUI示例')
-        self.resize(1200, 600)
+        self.setWindowTitle('西瓜视频下载@tt')
+        self.resize(1400, 600)
 
         main_layout = QVBoxLayout(self)
+ 
         input_layout = QHBoxLayout()
 
         self.url_input = QLineEdit(self)
@@ -59,16 +63,19 @@ class MyGUI(QWidget):
         self.tab_widget.addTab(self.download_tab, "下载列表")
 
         page_layout = QHBoxLayout()
+        about_button = QPushButton('关于', self)
         prev_button = QPushButton('上一页', self)
         next_button = QPushButton('下一页', self)
         all_selected_button = QPushButton('全选/反选', self)
         download_button = QPushButton('下载选中', self)
 
+        about_button.clicked.connect(self.openGit)
         prev_button.clicked.connect(self.prevButtonClicked)
         next_button.clicked.connect(self.nextButtonClicked)
         all_selected_button.clicked.connect(self.headerCheckboxStateChanged)
         download_button.clicked.connect(self.downloadButtonClicked)
 
+        page_layout.addWidget(about_button)
         page_layout.addWidget(prev_button)
         page_layout.addWidget(next_button)
         page_layout.addWidget(all_selected_button)
@@ -81,6 +88,10 @@ class MyGUI(QWidget):
         self.simulated_data = []
         self.current_page = 1
         self.page_size = 30
+    
+    def openGit(self):
+            # 在点击按钮时，打开默认浏览器并跳转到百度
+            webbrowser.open('http://www.baidu.com')
 
     def initTable(self, table,download_table_flag=False):
         horizontalHeaderLabels = []
@@ -119,25 +130,34 @@ class MyGUI(QWidget):
         self.updateTable(self.view_table)
 
     def updateTable(self, table,selected_rows=[]):
+        util = Util()
+        ids = []
         if len(selected_rows) > 0:
             table_count = table.rowCount()
-            ids = map(lambda obj: table.item(0,0).text(), range(0,table_count))
-            
+            local_ids = [table.item(index, 0).text() for index in range(table_count) if table.item(index, 0).text() in selected_rows]
+            ids = list(set(selected_rows) - set(local_ids))
+            video_array = []
+            if len(ids) == 0:
+                print('没有新增的数据')
+                return
+            else:
+                for index,id in enumerate(ids):
+                    table.setRowCount(len(ids) + table_count -1)
+                    table_index = index  + table_count
+                    desired_object = next(obj for obj in self.simulated_data if obj[0] == id)
+                    id = desired_object[0]
+                    title  = desired_object[1]
+                    publish_time = desired_object[2]
+                    status = '等待中'
 
-            for index,id in enumerate(selected_rows):
-                table.setRowCount(len(selected_rows) + table_count -1)
-                table_index = index  + table_count
-                desired_object = next(obj for obj in self.simulated_data if obj[0] == id)
-                id = desired_object[0]
-                title  = desired_object[1]
-                publish_time = desired_object[2]
-                status = desired_object[3]
-
-                table.insertRow(table_index)
-                table.setItem(table_index, 0, QTableWidgetItem(id))
-                table.setItem(table_index, 1, QTableWidgetItem(title))
-                table.setItem(table_index, 2, QTableWidgetItem(publish_time))
-                table.setItem(table_index, 3, QTableWidgetItem(status))
+                    table.insertRow(table_index)
+                    table.setItem(table_index, 0, QTableWidgetItem(id))
+                    table.setItem(table_index, 1, QTableWidgetItem(title))
+                    table.setItem(table_index, 2, QTableWidgetItem(publish_time))
+                    table.setItem(table_index, 3, QTableWidgetItem(status))
+                    video_array.append({'id':id,'title':title,'url':'res_url'})
+                if len(video_array) > 0:
+                    threading.Thread(target=self.xigua_download_list, args=(video_array,)).start()
         else:
             for row, (id, title, publish_time, status) in enumerate(self.simulated_data):
                 table.setRowCount(len(self.simulated_data))
@@ -148,17 +168,43 @@ class MyGUI(QWidget):
                 table.setItem(row, 3, QTableWidgetItem(publish_time))
                 table.setItem(row, 4, QTableWidgetItem(status))     
 
-
-
-
-
-
-        
-
         # 修改行号的显示文本，可以设置为您需要的任何文本
         for i in range(table.rowCount()):
             item = QTableWidgetItem(str(((self.current_page-1) * self.page_size) + i + 1))
-            table.setVerticalHeaderItem(i, item)        
+            table.setVerticalHeaderItem(i, item)   
+
+
+
+    def xigua_download_list(self,video_array):
+        util = Util()
+        base_path = 'download'
+        for video_data in video_array:
+            id = video_data['id']
+            url =  util.xigua_download(id)
+            filename =  f"{video_data['title']}.mp4"
+            source_path = os.path.join(base_path,id)
+            target_path = os.path.join(base_path,filename)
+
+            if os.path.exists(target_path):
+                print(f"{target_path}已下载，不重复下载")
+                self.updateStatus(id,f"已下载，不重复下载")
+                break
+
+            os.makedirs(base_path, exist_ok=True)
+            response = requests.get(url, stream=True, timeout=30)
+
+            to_do_count = 0
+            with open(source_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=1*1024*1024):
+                    file.write(chunk)
+                    to_do_count = to_do_count + len(chunk)
+                    self.updateStatus(id,f"已下载{to_do_count/1024/1024}MB")
+                    print(f"已下载{to_do_count/1024/1024}MB")
+            os.rename(source_path,target_path)
+            self.updateStatus(id,f"下载完成")
+
+
+
 
     def searchButtonClicked(self):
         self.current_page = 1
@@ -190,6 +236,15 @@ class MyGUI(QWidget):
         for row in range(self.view_table.rowCount()):
             checkbox = self.view_table.cellWidget(row, 0)
             checkbox.setChecked(not checkbox.isChecked())
+
+    def updateStatus(self, id_to_update, new_status):
+        # 根据ID修改相应行的状态列文字
+        # 遍历表格，查找匹配的ID并更新状态列
+        for row in range(self.download_table.rowCount()):
+            current_id = (self.download_table.item(row, 0).text())
+            if current_id == id_to_update:
+                self.download_table.setItem(row, 3, QTableWidgetItem(new_status))
+                break
 
 # 工具类
 class Util:
@@ -234,9 +289,7 @@ class Util:
             print("未找到匹配的部分")
             return []
 
-    def xigua_download_list(ids):
-        for id in ids:
-            Util.xigua_download(id)
+
 
     def xigua_download(self,id):
             # 指定目标URL
@@ -315,7 +368,8 @@ class Util:
                                                         soup = BeautifulSoup(content, 'html.parser')
                                                         title = soup.title.string.strip()
                                                         filename = f'{title}.mp4'
-                                                        Util.file_download(filename,decoded_url)
+                                                        # Util.file_download(filename,decoded_url,id)
+                                                        return decoded_url
                                                         flag = 1
                                                         break
                                         else:
@@ -349,7 +403,8 @@ class Util:
                                             soup = BeautifulSoup(content, 'html.parser')
                                             title = soup.title.string.strip()
                                             filename = f"{title}.mp4"
-                                            Util.file_download(filename,decoded_url)
+                                            # Util.file_download(filename,decoded_url,id)
+                                            return decoded_url
                                             flag = 1
                                             break
                                     else:
@@ -386,13 +441,8 @@ class Util:
         item_list = [{'id':x['gid'],'title':x['title'],'publish_time': datetime.utcfromtimestamp( x['publish_time']).strftime("%Y-%m-%d %H:%M:%S")} for x in videoList]
         return item_list                    
 
-    def file_download(filename,url):
-        os.makedirs('download', exist_ok=True)
-        response = requests.get(url, stream=True, timeout=30)
+                
 
-        with open(os.path.join('download',filename), 'wb') as file:
-            for chunk in response.iter_content(chunk_size=1*1024*1024):
-                file.write(chunk)
 
 
 if __name__ == '__main__':
