@@ -1,81 +1,13 @@
-# coding:utf-8
+import base64
+import json
 import os
 import re
-import sys
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QCompleter
-import json
-import base64
 import requests
 from bs4 import BeautifulSoup
-from qfluentwidgets import  PushButton, SearchLineEdit
 
 
 
-class Demo(QWidget):
-
-    def __init__(self):
-        super().__init__()
-        # self.setStyleSheet("Demo {background: rgb(32, 32, 32)}")
-        # setTheme(Theme.DARK)
-        self.setWindowTitle("西瓜down@shangtianfei")  # 将窗口标题更改为 "666"
-
-        # 设置窗口图标
-        # icon = QIcon('icon.png')
-        # self.setWindowIcon(icon)
-
-
-        self.hBoxLayout = QHBoxLayout(self)
-        self.lineEdit = SearchLineEdit(self)
-        self.button = PushButton('下载', self)
-
-        # add completer
-        stands = [
-            "Star Platinum", "Hierophant Green",
-            "Made in Haven", "King Crimson",
-            "Silver Chariot", "Crazy diamond",
-            "Metallica", "Another One Bites The Dust",
-            "Heaven's Door", "Killer Queen",
-            "The Grateful Dead", "Stone Free",
-            "The World", "Sticky Fingers",
-            "Ozone Baby", "Love Love Deluxe",
-            "Hermit Purple", "Gold Experience",
-            "King Nothing", "Paper Moon King",
-            "Scary Monster", "Mandom",
-            "20th Century Boy", "Tusk Act 4",
-            "Ball Breaker", "Sex Pistols",
-            "D4C • Love Train", "Born This Way",
-            "SOFT & WET", "Paisley Park",
-            "Wonder of U", "Walking Heart",
-            "Cream Starter", "November Rain",
-            "Smooth Operators", "The Matte Kudasai"
-        ]
-        self.completer = QCompleter(stands, self.lineEdit)
-        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.completer.setMaxVisibleItems(10)
-        self.lineEdit.setCompleter(self.completer)
-
-        self.resize(800, 300)
-        self.hBoxLayout.setAlignment(Qt.AlignCenter)
-        self.hBoxLayout.addWidget(self.lineEdit, 0, Qt.AlignCenter)
-        self.hBoxLayout.addWidget(self.button, 0, Qt.AlignCenter)
-
-        self.lineEdit.setFixedSize(600, 33)
-        self.lineEdit.setClearButtonEnabled(True)
-        self.lineEdit.setPlaceholderText('输入西瓜链接')
-        self.button.pressed.connect(self._textChanged)
-
-    def _textChanged(self):
-        text = self.lineEdit.text()
-        if len(self.lineEdit.text()) > 0:
-            match = re.search(r'\d+', text)
-            if match:
-                video_id = match.group()
-                self.xigua_download(video_id)
-
-    
-
-    def xigua_download(self,id):
+def xigua_download(self,id):
         # 指定目标URL
         url = "https://www.ixigua.com/" + id +'?wid_try=1'  #这里可以自行添加User-Agent和cookie
 
@@ -194,26 +126,73 @@ class Demo(QWidget):
                             except json.JSONDecodeError as e:
                                 print("Error decoding JSON:", e)          
 
-    def file_download(self,filename,url):
-        response = requests.get(url)
-        response.raise_for_status()
-        os.makedirs('download', exist_ok=True)
-        with open(os.path.join('download',filename), 'wb') as file:
-            file.write(response.content)
-        print(f"{filename}下载成功")
+def file_download(filename,url):
+    os.makedirs('download', exist_ok=True)
+    response = requests.get(url, stream=True, timeout=30)
 
+    with open(os.path.join('download',filename), 'wb') as file:
+        for chunk in response.iter_content(chunk_size=128):
+            file.write(chunk)
 
-        
+def all_item_list(home_id):
+    url = f"https://www.ixigua.com/api/videov2/author/new_video_list?to_user_id={home_id}&offset=0&limit=30"
+
+    payload = {}
+    headers = {
+    'authority': 'www.ixigua.com',
+    'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="98"',
+    'accept': 'application/json, text/plain, */*',
+    'x-secsdk-csrf-token': '0001000000012d8c8e7b0d26fba2cfc3268638a09cde9aaa2547df73756304a88ba8fc8a33ba17a70903d2d357bc',
+    'sec-ch-ua-mobile': '?0',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.139 Safari/537.36',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-site': 'same-origin',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-dest': 'empty',
+    'referer': f'https://www.ixigua.com/user_playlist/{home_id}',
+    'accept-language': 'zh-CN,zh;q=0.9',
+    'Cookie': 'ixigua-a-s=0'
+    }
+
+    response = requests.request("GET", url, headers=headers, data=payload)
+
+    return response
+
 
 
 if __name__ == '__main__':
-    # enable dpi scale
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-    Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
-    app = QApplication(sys.argv)
-    w = Demo()
-    w.show()
-    app.exec_()
+    url = "https://www.ixigua.com/7319841194182672936?wid_try=1"
+
+    payload = {}
+    headers = {
+    'authority': 'www.ixigua.com',
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'accept-language': 'zh-CN,zh;q=0.9',
+    'cache-control': 'max-age=0',
+    'referer': 'https://www.ixigua.com/7319841194182672936',
+    'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'same-origin',
+    'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Cookie': 'ixigua-a-s=0; support_avif=true; support_webp=true; xiguavideopcwebid=7320170644196492809; xiguavideopcwebid.sig=Hc-t8VdBrG3Na9D9VN55QRtiqTI'
+    }
+
+    response = requests.request("GET", url, headers=headers, data=payload)
+
+    html_content = response.content.decode('utf-8')
+    # 使用正则表达式匹配
+    pattern = re.compile(r'<title[^>]*>(.*?)<\/title>', re.DOTALL)
+    match = pattern.search(html_content)
+
+    if match:
+        title_content = match.group(1)
+        print("找到匹配的部分:", title_content)
+    else:
+        print("未找到匹配的部分")
+
