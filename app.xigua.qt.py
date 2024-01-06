@@ -119,16 +119,27 @@ class MyGUI(QWidget):
         self.updateTable(self.view_table)
 
     def updateTable(self, table,selected_rows=[]):
-        for row, (id, title, publish_time, status) in enumerate(self.simulated_data):
-            if len(selected_rows) > 0:
-                table.setRowCount(len(selected_rows))
-                if id in selected_rows:
-                    table_index = row
-                    table.setItem(table_index, 0, QTableWidgetItem(id))
-                    table.setItem(table_index, 1, QTableWidgetItem(title))
-                    table.setItem(table_index, 2, QTableWidgetItem(publish_time))
-                    table.setItem(table_index, 3, QTableWidgetItem(status))
-            else:
+        if len(selected_rows) > 0:
+            table_count = table.rowCount()
+            ids = map(lambda obj: table.item(0,0).text(), range(0,table_count))
+            
+
+            for index,id in enumerate(selected_rows):
+                table.setRowCount(len(selected_rows) + table_count -1)
+                table_index = index  + table_count
+                desired_object = next(obj for obj in self.simulated_data if obj[0] == id)
+                id = desired_object[0]
+                title  = desired_object[1]
+                publish_time = desired_object[2]
+                status = desired_object[3]
+
+                table.insertRow(table_index)
+                table.setItem(table_index, 0, QTableWidgetItem(id))
+                table.setItem(table_index, 1, QTableWidgetItem(title))
+                table.setItem(table_index, 2, QTableWidgetItem(publish_time))
+                table.setItem(table_index, 3, QTableWidgetItem(status))
+        else:
+            for row, (id, title, publish_time, status) in enumerate(self.simulated_data):
                 table.setRowCount(len(self.simulated_data))
                 checkbox = QCheckBox()
                 table.setCellWidget(row, 0, checkbox)
@@ -136,12 +147,18 @@ class MyGUI(QWidget):
                 table.setItem(row, 2, QTableWidgetItem(title))
                 table.setItem(row, 3, QTableWidgetItem(publish_time))
                 table.setItem(row, 4, QTableWidgetItem(status))     
+
+
+
+
+
+
+        
+
         # 修改行号的显示文本，可以设置为您需要的任何文本
         for i in range(table.rowCount()):
             item = QTableWidgetItem(str(((self.current_page-1) * self.page_size) + i + 1))
             table.setVerticalHeaderItem(i, item)        
-
-             
 
     def searchButtonClicked(self):
         self.current_page = 1
