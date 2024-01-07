@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget
+from PyQt5.QtCore import Qt
 
 
  
@@ -91,7 +92,7 @@ class MyGUI(QWidget):
     
     def openGit(self):
             # 在点击按钮时，打开默认浏览器并跳转到百度
-            webbrowser.open('http://www.baidu.com')
+            webbrowser.open('https://gitee.com/mijin/xigua_down')
 
     def initTable(self, table,download_table_flag=False):
         horizontalHeaderLabels = []
