@@ -2,6 +2,9 @@
 # xigua_down
 西瓜视频免登录下载,提供单个视频的url即可下载
 
+技术交流群：
+![1](https://gitee.com/mijin/xigua_down/raw/main/imgs/qq.jpg)
+
 
 # 使用方法
 ## 下载单个视频
