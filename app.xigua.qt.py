@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import threading
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import webbrowser
 from bs4 import BeautifulSoup
 import requests
@@ -11,8 +12,11 @@ from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget
 from PyQt5.QtCore import Qt
 
+# 全局唯一
+the_one_dict = {}
 
- 
+NEW_APP_VERSION = None
+THIS_APP_VERSION = 'v1.3.0' 
 
 class MyGUI(QWidget):
     def __init__(self):
@@ -21,6 +25,10 @@ class MyGUI(QWidget):
         self.initUI()
 
     def initUI(self):
+            # 加载版本信息
+        util =  Util()
+        NEW_APP_VERSION = util.new_version()
+
         self.setWindowTitle('西瓜视频下载@tt')
         self.resize(1400, 600)
 
@@ -64,7 +72,7 @@ class MyGUI(QWidget):
         self.tab_widget.addTab(self.download_tab, "下载列表")
 
         page_layout = QHBoxLayout()
-        about_button = QPushButton('关于', self)
+        about_button = QPushButton(('关于' if THIS_APP_VERSION==NEW_APP_VERSION else '点击更新'), self)
         prev_button = QPushButton('上一页', self)
         next_button = QPushButton('下一页', self)
         all_selected_button = QPushButton('全选/反选', self)
@@ -92,7 +100,7 @@ class MyGUI(QWidget):
     
     def openGit(self):
             # 在点击按钮时，打开默认浏览器并跳转到百度
-            webbrowser.open('https://gitee.com/mijin/xigua_down')
+            webbrowser.open('https://gitee.com/mijin/xigua_down/releases')
 
     def initTable(self, table,download_table_flag=False):
         horizontalHeaderLabels = []
@@ -123,10 +131,15 @@ class MyGUI(QWidget):
         else:
             print('错误的url')
             return
+        
+        # 获取字典中最大的键，如果字典为空则默认为1
+        max_key =  max(the_one_dict.keys(), default='1')
 
         self.simulated_data = []
-        for data in item_list:
-            self.simulated_data.append((data['id'], data['title'], data['publish_time'], '查看'))
+        for index,data in enumerate(item_list) :
+            id = int(max_key) + index 
+            self.simulated_data.append(( str(id).zfill(5), data['title'], data['publish_time'], '查看'))
+            the_one_dict[str(id).zfill(5)] = data
 
         self.updateTable(self.view_table)
 
@@ -156,7 +169,7 @@ class MyGUI(QWidget):
                     table.setItem(table_index, 1, QTableWidgetItem(title))
                     table.setItem(table_index, 2, QTableWidgetItem(publish_time))
                     table.setItem(table_index, 3, QTableWidgetItem(status))
-                    video_array.append({'id':id,'title':title,'url':'res_url'})
+                    video_array.append({'id':id,'title':title,'url':the_one_dict[id]['url']})
                 if len(video_array) > 0:
                     threading.Thread(target=self.xigua_download_list, args=(video_array,)).start()
         else:
@@ -181,7 +194,7 @@ class MyGUI(QWidget):
         base_path = 'download'
         for video_data in video_array:
             id = video_data['id']
-            url =  util.xigua_download(id)
+            url =  util.xigua_download(video_data['url'])
             filename =  f"{video_data['title']}.mp4"
             source_path = os.path.join(base_path,id)
             target_path = os.path.join(base_path,filename)
@@ -192,11 +205,11 @@ class MyGUI(QWidget):
                 break
 
             os.makedirs(base_path, exist_ok=True)
-            response = requests.get(url, stream=True, timeout=30)
+            response = requests.get(url, stream=True, timeout=500)
 
             to_do_count = 0
             with open(source_path, 'wb') as file:
-                for chunk in response.iter_content(chunk_size=1*1024*1024):
+                for chunk in response.iter_content(chunk_size=2*1024*1024):
                     file.write(chunk)
                     to_do_count = to_do_count + len(chunk)
                     self.updateStatus(id,f"已下载{to_do_count/1024/1024}MB")
@@ -253,6 +266,9 @@ class Util:
         print("Initializing...")
 
 
+    # 存在两种情况，分别是有多P电视剧 和 没有多P
+    # url = "https://www.ixigua.com/6719270659400155659?wid_try=1"
+    # url = "https://www.ixigua.com/7322803456891486730?wid_try=1"
     def xigua_title_by_id(self,id):
         url = f"https://www.ixigua.com/{id}?wid_try=1"
 
@@ -272,149 +288,142 @@ class Util:
         'sec-fetch-user': '?1',
         'upgrade-insecure-requests': '1',
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Cookie': 'ixigua-a-s=0; support_avif=true; support_webp=true; xiguavideopcwebid=7320170644196492809; xiguavideopcwebid.sig=Hc-t8VdBrG3Na9D9VN55QRtiqTI'
         }
 
         response = requests.request("GET", url, headers=headers, data=payload)
 
         html_content = response.content.decode('utf-8')
         # 使用正则表达式匹配 <script[^>]*>(.*?)<\/script>
-        pattern = re.compile(r'<script\s+data-react-helmet="true"[^>]*>(.*?)<\/script>', re.DOTALL)
+        pattern = re.compile(r'<script\s+id=".*?"\s*nonce=".*?">\s*window\._SSR_HYDRATED_DATA=(.*?)</script>', re.DOTALL)
         match = pattern.search(html_content)
+
+
 
         if match:
             json_content_str = match.group(1)
-            json_content = json.loads(json_content_str)
-            return [{'id':id,'title':json_content['name'],'publish_time':json_content['uploadDate']}]
+            # print(json_content_str)
+            output_string = json_content_str.replace('undefined', '{}')
+
+            json_content = json.loads(output_string)
+            packerData = json_content['anyVideo']['gidInformation']['packerData']
+            res = []
+            # 判断键是否存在
+            if 'episodeInfo' in packerData:
+                episodeId = packerData['episodeInfo']['episodeId']
+                url = f"https://www.ixigua.com/api/albumv2/details?albumId={id}&episodeId={episodeId}"
+
+                payload = {}
+                headers = {
+                'authority': 'www.ixigua.com',
+                'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="98"',
+                'accept': 'application/json, text/plain, */*',
+                'x-secsdk-csrf-token': '00010000000144d196a4207c356efe00325751746b756de113d5a8c47b39f9a5ac3dd3e2d9ff17aa79f74140abee',
+                'sec-ch-ua-mobile': '?0',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.139 Safari/537.36',
+                'tt-anti-token': 'NBZOII0rrA-b6c8c769ecfc773ae57f8403048234c51a5a9224a4d7e3bc08a983736da330ac',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-site': 'same-origin',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-dest': 'empty',
+                'referer': f'https://www.ixigua.com/{id}?id={episodeId}',
+                'accept-language': 'zh-CN,zh;q=0.9',
+                }
+
+                response = requests.request("GET", url, headers=headers, data=payload)
+                json_data = json.loads(response.text)
+                playlist = json_data['data']['playlist']
+
+                for playItem in playlist:
+                    target_url = f"https://www.ixigua.com/{id}?id={episodeId}"
+                    res.append({'id':id,'title':playItem['title'],'publish_time':json_data['data']['albumInfo']['year'],'url':target_url})
+                
+            else:
+                    target_url = f"https://www.ixigua.com/{id}"
+                    publish_time = self.search_key_in_json(packerData,'video_publish_time')
+                    formatted_time = datetime.fromtimestamp(int(publish_time)).strftime('%Y-%m-%d %H:%M:%S')
+                    title = self.search_key_in_json(packerData,'title')
+               
+                    res.append({'id':id,'title':title,'publish_time':formatted_time,'url':target_url})
+            return res    
         else:
             print("未找到匹配的部分")
             return []
 
 
 
-    def xigua_download(self,id):
-            # 指定目标URL
-            url = "https://www.ixigua.com/" + id +'?wid_try=1'  #这里可以自行添加User-Agent和cookie
+    def xigua_download(self,url):
+        # 解析URL
+        parsed_url = urlparse(url)
 
-            # 发送HTTP请求获取URL内容
-            flag = 0
-            is_hevc = 0 
-            out_q = 0
-            while flag == 0 :
-                    while 1 :
-                        try:
-                            response = requests.get(url)
-                            break
-                        except ConnectionError as e:
-                            continue
+        # 解析查询参数
+        query_params = parse_qs(parsed_url.query)
 
-                    content = response.content.decode('utf-8')
-                    if content.find("video_5") != -1:
-                        if out_q == 0 :
-                            out_q = 1   
-                            print("4K")
-                        video_parts = content.split("video_5")
-                    else :
-                        if content.find("video_4") != -1 :
-                            if out_q == 0 :
-                                out_q = 1 
-                                print("1080P")
-                            video_parts = content.split("video_4")
-                        else :
-                            if content.find("video_3") != -1 :
-                                if out_q == 0 :
-                                    out_q = 1 
-                                    print("720P")
-                                video_parts = content.split("video_3")
-                            else :
-                                if content.find("video_2") != -1 :
-                                    if out_q == 0 :
-                                        out_q = 1 
-                                        print("480P")
-                                    video_parts = content.split("video_2")
-                                else :
-                                    if out_q == 0 :
-                                        out_q = 1 
-                                        print("360P")
-                                    video_parts = content.split("video_1")
+        # 添加或更新 wid_try 参数
+        query_params['wid_try'] = ['1']
 
-                    
-                    for part in video_parts[1:]:
-                        brace_count = 0
-                        json_content = ""
-                        
-                        for char in part:
-                            if char == "{":
-                                brace_count += 1
-                            elif char == "}":
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    json_content =  json_content + char
-                                    break
-                            if brace_count > 0:
-                                json_content += char
+        # 重新构建URL
+        url = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path,
+                                parsed_url.params, urlencode(query_params, doseq=True),
+                                parsed_url.fragment))
 
-                        if json_content:
-                            try:
-                                data = json.loads(json_content)
-                                # 检查是否有 "codec_type" 为 "bytevc1" 的对象
-                                if "codec_type" in data and data["codec_type"] == "bytevc1":
-                                        main_url = data.get("main_url")
-                                        if main_url:
-                                                # 解码 main_url 的值并输出
-                                                decoded_url = base64.b64decode(main_url).decode('utf-8')
-                                                test = requests.head(decoded_url)
-                                                is_hevc = 1
-                                                if test.status_code == 200:
-                                                        soup = BeautifulSoup(content, 'html.parser')
-                                                        title = soup.title.string.strip()
-                                                        filename = f'{title}.mp4'
-                                                        # Util.file_download(filename,decoded_url,id)
-                                                        return decoded_url
-                                                        flag = 1
-                                                        break
-                                        else:
-                                            print("No main_url found.")
-                            except json.JSONDecodeError as e:
-                                print("Error decoding JSON:", e)              
-                    if is_hevc == 0 :
-                        for part in video_parts[1:]:
-                            brace_count = 0
-                            json_content = ""
-                        
-                            for char in part:
-                                if char == "{":
-                                    brace_count += 1
-                                elif char == "}":
-                                    brace_count -= 1
-                                    if brace_count == 0:
-                                        json_content =  json_content + char
-                                        break
-                                if brace_count > 0:
-                                    json_content += char
-                            if json_content:
-                                try:
-                                    data = json.loads(json_content)
-                                    main_url = data.get("main_url")
-                                    if main_url:     
-                                        # 解码 main_url 的值并输出
-                                        decoded_url = base64.b64decode(main_url).decode('utf-8')
-                                        test = requests.head(decoded_url)
-                                        if test.status_code == 200:
-                                            soup = BeautifulSoup(content, 'html.parser')
-                                            title = soup.title.string.strip()
-                                            filename = f"{title}.mp4"
-                                            # Util.file_download(filename,decoded_url,id)
-                                            return decoded_url
-                                            flag = 1
-                                            break
-                                    else:
-                                        print("No main_url found.")
-                                except json.JSONDecodeError as e:
-                                    print("Error decoding JSON:", e)          
+        payload = {}
+        headers = {
+        'authority': 'www.ixigua.com',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'cache-control': 'max-age=0',
+        'referer': f'{url}',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
+
+        response = requests.request("GET", url, headers=headers, data=payload)
+
+        html_content = response.content.decode('utf-8')
+        # 使用正则表达式匹配 <script[^>]*>(.*?)<\/script>
+        pattern = re.compile(r'<script\s+id=".*?"\s*nonce=".*?">\s*window\._SSR_HYDRATED_DATA=(.*?)</script>', re.DOTALL)
+        match = pattern.search(html_content)
 
 
+        decoded_url = None
+        if match:
+            json_content_str = match.group(1)
+            output_string = json_content_str.replace('undefined', '{}')
 
+            json_content = json.loads(output_string)
+            # 当前路径：anyVideo.gidInformation.packerData.videoResource.normal.video_list.video_3.main_url
+            for i in range(3,0,-1):
+                video_data = self.search_key_in_json(json_content,f'video_{i}')
+                if video_data != None:
+                    main_url  = video_data['main_url']
+                    decoded_url = base64.b64decode(main_url).decode('utf-8')
+                    break
+
+        return decoded_url
+
+
+ 
+    def search_key_in_json(self,data, search_key):
+        if isinstance(data, dict):
+            if search_key in data:
+                return data[search_key]
+            for key, value in data.items():
+                result = self.search_key_in_json(value, search_key)
+                if result is not None:
+                    return result
+        elif isinstance(data, list):
+            for item in data:
+                result = self.search_key_in_json(item, search_key)
+                if result is not None:
+                    return result
+        return None
 
     def item_list_page(self,home_id,offset=0,limit=30):
         url = f"https://www.ixigua.com/api/videov2/author/new_video_list?to_user_id={home_id}&offset={offset}&limit={limit}"
@@ -439,14 +448,44 @@ class Util:
 
         json_data = json.loads(response.text)
         videoList = json_data['data']['videoList']
-        item_list = [{'id':x['gid'],'title':x['title'],'publish_time': datetime.utcfromtimestamp( x['publish_time']).strftime("%Y-%m-%d %H:%M:%S")} for x in videoList]
-        return item_list                    
+        item_list = [{'id':x['gid'],'title':x['title'],'publish_time': datetime.utcfromtimestamp( x['publish_time']).strftime("%Y-%m-%d %H:%M:%S"),'url':f"https://www.ixigua.com/{x['gid']}"} for x in videoList]
+        return item_list   
+
+
+    def new_version(self):
+        url = "https://gitee.com/mijin/xigua_down/releases"
+
+        payload = {}
+        headers = {}
+
+        response = requests.request("GET", url, headers=headers, data=payload)
+
+        if response.status_code == 200:
+            input_data = response.text
+            regex = "data-tag-name='(.*?)'"
+            pattern = re.compile(regex)
+            matcher = pattern.finditer(input_data)
+
+            version_list = []
+            # 寻找匹配项
+            for match in matcher:
+                # 提取匹配的组（即括号内的内容）
+                version_code = match.group(1)
+                version_list.append(version_code)
+
+            if version_list:
+                NEW_APP_VERSION = max(version_list)
+
+        return NEW_APP_VERSION
+
 
                 
 
 
 
 if __name__ == '__main__':
+
+
     app = QApplication(sys.argv)
     my_gui = MyGUI()
     my_gui.show()
