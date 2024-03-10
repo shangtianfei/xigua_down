@@ -89,3 +89,6 @@ pyinstaller --noconsole --onefile  app.xigua.qt.py
 deactivate
 ```
 感谢 https://github.com/wangjunji0920/xigua_downloader 开源的代码
+
+
+https://www.iesdouyin.com/share/video/7326910962680843583/?region=CN&mid=7326911013016619827&u_code=0&did=MS4wLjABAAAAp4I_LgsOz-RDdgh89dH1R2cK2X_c_BhWHHGzjYqtHo32nLGsZcrdB91Kq8jVVeAy&iid=MS4wLjABAAAAPAwcqL8imBJq94y3PPFN-0gbKoJUGLD3IIkytfv2xF-PeHFjhS1nAin_O6ueaQgp&with_sec_did=1&titleType=title&share_sign=.c7UUzBEFPUzZufprTJ.6x_bYqwFf6oRFJqyzu_5e6g-&share_version=280500&ts=1705974164&from_aid=1128&from_ssr=1&utm_source=copy&utm_campaign=client_share&utm_medium=android&app=aweme
