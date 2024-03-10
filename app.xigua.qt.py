@@ -1,9 +1,11 @@
 import base64
 import json
+import math
 import os
 import re
 import sys
 import threading
+import time
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import webbrowser
 from bs4 import BeautifulSoup
@@ -12,11 +14,12 @@ from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget
 from PyQt5.QtCore import Qt
 
+ 
 # 全局唯一
 the_one_dict = {}
 
 NEW_APP_VERSION = None
-THIS_APP_VERSION = 'v1.3.0' 
+THIS_APP_VERSION = 'v1.4.0' 
 
 class MyGUI(QWidget):
     def __init__(self):
@@ -194,7 +197,8 @@ class MyGUI(QWidget):
         base_path = 'download'
         for video_data in video_array:
             id = video_data['id']
-            url =  util.xigua_download(video_data['url'])
+            video_data_target =  util.xigua_download(video_data['url'])
+            url = video_data_target['main_url']
             filename =  f"{video_data['title']}.mp4"
             source_path = os.path.join(base_path,id)
             target_path = os.path.join(base_path,filename)
@@ -204,20 +208,86 @@ class MyGUI(QWidget):
                 self.updateStatus(id,f"已下载，不重复下载")
                 break
 
-            os.makedirs(base_path, exist_ok=True)
-            response = requests.get(url, stream=True, timeout=500)
 
-            to_do_count = 0
-            with open(source_path, 'wb') as file:
-                for chunk in response.iter_content(chunk_size=2*1024*1024):
-                    file.write(chunk)
-                    to_do_count = to_do_count + len(chunk)
-                    self.updateStatus(id,f"已下载{to_do_count/1024/1024}MB")
-                    print(f"已下载{to_do_count/1024/1024}MB")
-            os.rename(source_path,target_path)
+            os.makedirs(base_path, exist_ok=True)
+            # response = requests.get(url, stream=True, timeout=500,headers=headers)
+            total_size = video_data_target['size']
+            self.download_video(url,target_path,total_size,id)
+
+            # os.rename(source_path,target_path)
             self.updateStatus(id,f"下载完成")
 
 
+    def download_video_part(self,url, start_byte, end_byte, filename):  
+        headers = {
+            'authority': 'v9-p-xg-web-pc.ixigua.com',
+            'pragma': 'no-cache',
+            'cache-control': 'no-cache',
+            'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="98"',
+            'sec-ch-ua-mobile': '?0',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.139 Safari/537.36',
+            'sec-ch-ua-platform': '"Windows"',
+            'accept': '*/*',
+            'origin': 'https://www.ixigua.com',
+            'sec-fetch-site': 'same-site',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-dest': 'empty',
+            'referer': 'https://www.ixigua.com/',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'range': f'bytes={start_byte}-{end_byte}'
+            } 
+        
+        response = requests.get(url, headers=headers, stream=True)  
+        
+        if response.status_code == 206:  
+            with open(filename, 'wb') as f:  
+                for chunk in response.iter_content(1024):  
+                    if chunk:  
+                        f.write(chunk)  
+            print(f"视频部分 {start_byte}-{end_byte} 下载完成")  
+        else:  
+            print(f"下载部分失败，状态码: {response.status_code}")  
+  
+    def download_video(self,url, output_filename,total_size,id):  
+        # 发起一个HEAD请求来获取视频的总大小  
+        head_response = requests.head(url)  
+        if head_response.status_code != 200:  
+            part_size = 1024 * 1024  # 1MB per part  
+            
+            # 计算需要下载的部分数量  
+            num_parts = (total_size + part_size - 1) // part_size  
+            
+            # 创建临时目录来保存部分文件  
+            temp_dir = f'{time.time()}'  
+            if not os.path.exists(temp_dir):  
+                os.makedirs(temp_dir)  
+            
+            # 下载视频的每个部分  
+            for part_num in range(num_parts):  
+                start_byte = part_num * part_size  
+                end_byte = min(start_byte + part_size - 1, total_size - 1)  
+                part_filename = os.path.join(temp_dir, f"video_part_{part_num}.mp4")  
+                self.download_video_part(url, start_byte, end_byte, part_filename)  
+                percentage = round((part_num/num_parts) * 100, 4)
+                self.updateStatus(id,f"已下载 {percentage}%")
+
+            
+            # 合并所有部分文件为一个完整的视频文件  
+            with open(output_filename, 'wb') as outfile:  
+                for part_num in range(num_parts):  
+                    part_filename = os.path.join(temp_dir, f"video_part_{part_num}.mp4")  
+                    with open(part_filename, 'rb') as partfile:  
+                        outfile.write(partfile.read())  
+                    # 删除已合并的部分文件以释放空间  
+                    os.remove(part_filename)  
+            
+            # 删除临时目录（如果它是空的）  
+            try:  
+                os.rmdir(temp_dir)  
+            except OSError:  
+                pass  # 目录可能不空，忽略错误  
+            
+            print(f"视频下载完成: {output_filename}")  
 
 
     def searchButtonClicked(self):
@@ -392,7 +462,7 @@ class Util:
         match = pattern.search(html_content)
 
 
-        decoded_url = None
+        video_data = None
         if match:
             json_content_str = match.group(1)
             output_string = json_content_str.replace('undefined', '{}')
@@ -404,9 +474,10 @@ class Util:
                 if video_data != None:
                     main_url  = video_data['main_url']
                     decoded_url = base64.b64decode(main_url).decode('utf-8')
+                    video_data['main_url'] = decoded_url
                     break
 
-        return decoded_url
+        return video_data
 
 
  
