@@ -11,15 +11,16 @@ import webbrowser
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
-from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget
+from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget,QComboBox  
 from PyQt5.QtCore import Qt
 
  
 # 全局唯一
 the_one_dict = {}
+download_ids = []
 
 NEW_APP_VERSION = None
-THIS_APP_VERSION = 'v1.4.0' 
+THIS_APP_VERSION = 'v1.4.1' 
 
 class MyGUI(QWidget):
     def __init__(self):
@@ -32,7 +33,7 @@ class MyGUI(QWidget):
         util =  Util()
         NEW_APP_VERSION = util.new_version()
 
-        self.setWindowTitle('西瓜视频下载@tt')
+        self.setWindowTitle('西瓜视频下载@tt@qq:232400689')
         self.resize(1400, 600)
 
         main_layout = QVBoxLayout(self)
@@ -43,8 +44,13 @@ class MyGUI(QWidget):
         search_button = QPushButton('查找', self)
         search_button.clicked.connect(self.searchButtonClicked)
         self.url_input_value = ''
+                        # 创建一个 QComboBox 并添加选项  
+        combo_box = QComboBox()  
+        combo_box.addItem('视频')  
+        # combo_box.addItem('小视频')  
 
         input_layout.addWidget(self.url_input)
+        input_layout.addWidget(combo_box)
         input_layout.addWidget(search_button)
 
         # 创建QTabWidget作为主布局
@@ -108,9 +114,9 @@ class MyGUI(QWidget):
     def initTable(self, table,download_table_flag=False):
         horizontalHeaderLabels = []
         if download_table_flag:
-            horizontalHeaderLabels = ['ID', '标题', '发布时间', '状态']
+            horizontalHeaderLabels = ['ID', '标题', '发布时间','清晰度', '状态']
         else:            
-            horizontalHeaderLabels = ['复选框', 'ID', '标题', '发布时间', '状态']
+            horizontalHeaderLabels = ['复选框', 'ID', '标题', '发布时间','清晰度', '状态']
 
         table.setColumnCount(len(horizontalHeaderLabels))
         table.setHorizontalHeaderLabels(horizontalHeaderLabels)
@@ -135,24 +141,20 @@ class MyGUI(QWidget):
             print('错误的url')
             return
         
-        # 获取字典中最大的键，如果字典为空则默认为1
-        max_key =  max(the_one_dict.keys(), default='1')
-
         self.simulated_data = []
         for index,data in enumerate(item_list) :
-            id = int(max_key) + index 
-            self.simulated_data.append(( str(id).zfill(5), data['title'], data['publish_time'], '查看'))
-            the_one_dict[str(id).zfill(5)] = data
+            index_str = str(index + 1).zfill(4)
+            id = f"{data['id'].zfill(5)}_{index_str}"[-10:]
+            self.simulated_data.append((id, data['title'], data['publish_time'],data['definition_list'], '查看'))
+            the_one_dict[id] = data
 
         self.updateTable(self.view_table)
 
     def updateTable(self, table,selected_rows=[]):
-        util = Util()
         ids = []
         if len(selected_rows) > 0:
             table_count = table.rowCount()
-            local_ids = [table.item(index, 0).text() for index in range(table_count) if table.item(index, 0).text() in selected_rows]
-            ids = list(set(selected_rows) - set(local_ids))
+            ids = list(set( [ item['id']  for item in  selected_rows]) - set(download_ids))
             video_array = []
             if len(ids) == 0:
                 print('没有新增的数据')
@@ -167,23 +169,36 @@ class MyGUI(QWidget):
                     publish_time = desired_object[2]
                     status = '等待中'
 
+                    p = next(obj['p'] for obj in selected_rows if obj['id'] == id)
                     table.insertRow(table_index)
                     table.setItem(table_index, 0, QTableWidgetItem(id))
                     table.setItem(table_index, 1, QTableWidgetItem(title))
                     table.setItem(table_index, 2, QTableWidgetItem(publish_time))
-                    table.setItem(table_index, 3, QTableWidgetItem(status))
-                    video_array.append({'id':id,'title':title,'url':the_one_dict[id]['url']})
+                    table.setItem(table_index, 3, QTableWidgetItem(p))
+                    table.setItem(table_index, 4, QTableWidgetItem(status))
+                    download_ids.append(id)
+                    video_array.append({'id':id,'title':title,'url':the_one_dict[id]['url'],'p':p})
                 if len(video_array) > 0:
                     threading.Thread(target=self.xigua_download_list, args=(video_array,)).start()
         else:
-            for row, (id, title, publish_time, status) in enumerate(self.simulated_data):
+            for row, (id, title, publish_time,definition_list, status) in enumerate(self.simulated_data):
                 table.setRowCount(len(self.simulated_data))
                 checkbox = QCheckBox()
                 table.setCellWidget(row, 0, checkbox)
                 table.setItem(row, 1, QTableWidgetItem(id))
                 table.setItem(row, 2, QTableWidgetItem(title))
                 table.setItem(row, 3, QTableWidgetItem(publish_time))
-                table.setItem(row, 4, QTableWidgetItem(status))     
+                sorted_videos = sorted(definition_list, key=lambda item: int(item.rstrip('p')))  
+
+                # 创建一个 QComboBox 并添加选项  
+                combo_box = QComboBox()  
+                for definition in sorted_videos:
+                 combo_box.addItem(definition)  
+                 
+                
+                # 将自定义的 QWidget 设置为特定单元格的内容  
+                table.setCellWidget(row, 4, combo_box)  # 在第一行第五列设置自定义内容  
+                table.setItem(row, 5, QTableWidgetItem(status))     
 
         # 修改行号的显示文本，可以设置为您需要的任何文本
         for i in range(table.rowCount()):
@@ -197,9 +212,9 @@ class MyGUI(QWidget):
         base_path = 'download'
         for video_data in video_array:
             id = video_data['id']
-            video_data_target =  util.xigua_download(video_data['url'])
+            video_data_target =  util.xigua_download(video_data)
             url = video_data_target['main_url']
-            filename =  f"{video_data['title']}.mp4"
+            filename =  f"{video_data['title']}.{video_data['p']}.mp4"
             source_path = os.path.join(base_path,id)
             target_path = os.path.join(base_path,filename)
 
@@ -212,10 +227,16 @@ class MyGUI(QWidget):
             os.makedirs(base_path, exist_ok=True)
             # response = requests.get(url, stream=True, timeout=500,headers=headers)
             total_size = video_data_target['size']
-            self.download_video(url,target_path,total_size,id)
+            print('调用下载')
+            flag =  self.download_video(url,target_path,total_size,id)
+            if flag:
+                self.updateStatus(id,f"下载完成")
+            else:
+                self.updateStatus(id,f"下载异常")
+
+            print('任务完成')
 
             # os.rename(source_path,target_path)
-            self.updateStatus(id,f"下载完成")
 
 
     def download_video_part(self,url, start_byte, end_byte, filename):  
@@ -237,7 +258,11 @@ class MyGUI(QWidget):
             'range': f'bytes={start_byte}-{end_byte}'
             } 
         
-        response = requests.get(url, headers=headers, stream=True)  
+        response = self.send_request_with_retry(url,headers)  
+
+        if response == None:
+            print(f"多次重试下载失败")  
+            return False
         
         if response.status_code == 206:  
             with open(filename, 'wb') as f:  
@@ -245,12 +270,29 @@ class MyGUI(QWidget):
                     if chunk:  
                         f.write(chunk)  
             print(f"视频部分 {start_byte}-{end_byte} 下载完成")  
+            return True
         else:  
             print(f"下载部分失败，状态码: {response.status_code}")  
+            return False
   
+
+    def send_request_with_retry(self,url,headers, retries=10, backoff_factor=0.3):  
+        for attempt in range(retries):  
+            try:  
+                response = requests.get(url, headers=headers, stream=True)  
+                response.raise_for_status()  # 如果响应状态码不是 200，则抛出 HTTPError 异常  
+                return response  
+            except (requests.RequestException, requests.HTTPError) as e:  
+                print(f"Request failed: {e}, retrying... ({attempt + 1}/{retries})")  
+                time.sleep(backoff_factor * (2 ** attempt))  # 指数退避策略  
+        print("Max retries exceeded with url: %s" % url)  
+        return None  
+
     def download_video(self,url, output_filename,total_size,id):  
-        # 发起一个HEAD请求来获取视频的总大小  
+        # 
+        print('发起一个HEAD请求来获取视频的总大小')
         head_response = requests.head(url)  
+        print(f'HEAD请求 head_response.status_code = {head_response.status_code}')
         if head_response.status_code != 200:  
             part_size = 1024 * 1024  # 1MB per part  
             
@@ -258,7 +300,7 @@ class MyGUI(QWidget):
             num_parts = (total_size + part_size - 1) // part_size  
             
             # 创建临时目录来保存部分文件  
-            temp_dir = f'{time.time()}'  
+            temp_dir = f'/download/{id}'  
             if not os.path.exists(temp_dir):  
                 os.makedirs(temp_dir)  
             
@@ -268,7 +310,7 @@ class MyGUI(QWidget):
                 end_byte = min(start_byte + part_size - 1, total_size - 1)  
                 part_filename = os.path.join(temp_dir, f"video_part_{part_num}.mp4")  
                 self.download_video_part(url, start_byte, end_byte, part_filename)  
-                percentage = round((part_num/num_parts) * 100, 4)
+                percentage = round((part_num/num_parts) * 100, 2)
                 self.updateStatus(id,f"已下载 {percentage}%")
 
             
@@ -288,6 +330,11 @@ class MyGUI(QWidget):
                 pass  # 目录可能不空，忽略错误  
             
             print(f"视频下载完成: {output_filename}")  
+            return True
+        else:
+            print(f"请求视频size异常 url={url}")  
+            return False
+
 
 
     def searchButtonClicked(self):
@@ -309,7 +356,8 @@ class MyGUI(QWidget):
             checkbox = self.view_table.cellWidget(row, 0)
             if checkbox.isChecked():
                 selected_data = [self.view_table.item(row, col).text() for col in range(1, 4)]
-                selected_rows.append(selected_data[0])
+                selected_p_data = self.view_table.cellWidget(row, 4).currentText()
+                selected_rows.append({'id':selected_data[0],'p':selected_p_data})
 
         print("选中行的数据：", selected_rows)
 
@@ -327,7 +375,7 @@ class MyGUI(QWidget):
         for row in range(self.download_table.rowCount()):
             current_id = (self.download_table.item(row, 0).text())
             if current_id == id_to_update:
-                self.download_table.setItem(row, 3, QTableWidgetItem(new_status))
+                self.download_table.setItem(row, 4, QTableWidgetItem(new_status))
                 break
 
 # 工具类
@@ -375,6 +423,8 @@ class Util:
             output_string = json_content_str.replace('undefined', '{}')
 
             json_content = json.loads(output_string)
+            video_list =  self.search_key_in_json(json_content,'video_list')
+            definition_list = [x.get('definition', 'No definition provided') for x in video_list.values()]
             packerData = json_content['anyVideo']['gidInformation']['packerData']
             res = []
             # 判断键是否存在
@@ -405,7 +455,12 @@ class Util:
 
                 for playItem in playlist:
                     target_url = f"https://www.ixigua.com/{id}?id={episodeId}"
-                    res.append({'id':id,'title':playItem['title'],'publish_time':json_data['data']['albumInfo']['year'],'url':target_url})
+                    res.append({'id':id,
+                                'title':playItem['title'],
+                                'publish_time':json_data['data']['albumInfo']['year'],
+                                'url':target_url,
+                                'video_list':video_list,
+                                'definition_list':definition_list})
                 
             else:
                     target_url = f"https://www.ixigua.com/{id}"
@@ -413,7 +468,13 @@ class Util:
                     formatted_time = datetime.fromtimestamp(int(publish_time)).strftime('%Y-%m-%d %H:%M:%S')
                     title = self.search_key_in_json(packerData,'title')
                
-                    res.append({'id':id,'title':title,'publish_time':formatted_time,'url':target_url})
+                    res.append({'id':id,
+                                'title':title,
+                                'publish_time':formatted_time,
+                                'url':target_url,
+                                'video_list':video_list,
+                                'definition_list':definition_list
+                                })
             return res    
         else:
             print("未找到匹配的部分")
@@ -421,9 +482,9 @@ class Util:
 
 
 
-    def xigua_download(self,url):
+    def xigua_download(self,video_data_):
         # 解析URL
-        parsed_url = urlparse(url)
+        parsed_url = urlparse(video_data_['url'])
 
         # 解析查询参数
         query_params = parse_qs(parsed_url.query)
@@ -469,13 +530,12 @@ class Util:
 
             json_content = json.loads(output_string)
             # 当前路径：anyVideo.gidInformation.packerData.videoResource.normal.video_list.video_3.main_url
-            for i in range(3,0,-1):
-                video_data = self.search_key_in_json(json_content,f'video_{i}')
-                if video_data != None:
-                    main_url  = video_data['main_url']
-                    decoded_url = base64.b64decode(main_url).decode('utf-8')
-                    video_data['main_url'] = decoded_url
-                    break
+
+            video_list = self.search_key_in_json(json_content,'video_list')
+            video_data =next(obj  for obj in video_list.values() if obj['definition'] == video_data_['p'])
+            main_url  = video_data['main_url']
+            decoded_url = base64.b64decode(main_url).decode('utf-8')
+            video_data['main_url'] = decoded_url
 
         return video_data
 
@@ -519,7 +579,14 @@ class Util:
 
         json_data = json.loads(response.text)
         videoList = json_data['data']['videoList']
-        item_list = [{'id':x['gid'],'title':x['title'],'publish_time': datetime.utcfromtimestamp( x['publish_time']).strftime("%Y-%m-%d %H:%M:%S"),'url':f"https://www.ixigua.com/{x['gid']}"} for x in videoList]
+        item_list = [{'id':x['gid'],
+                      'title':x['title'],
+                      'publish_time': datetime.utcfromtimestamp( x['publish_time']).strftime("%Y-%m-%d %H:%M:%S"),
+                      'url':f"https://www.ixigua.com/{x['gid']}",
+                       'definition_list':['360p','480p','720p','1080p']
+                    #   ,'videolist':definition_list
+                      } 
+                      for x in videoList]
         return item_list   
 
 
