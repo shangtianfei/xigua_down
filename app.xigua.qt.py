@@ -23,7 +23,7 @@ the_one_dict = {}
 download_ids = []
 
 NEW_APP_VERSION = None
-THIS_APP_VERSION = 'v1.4.1' 
+THIS_APP_VERSION = 'v1.4.2' 
 
 class MyGUI(QWidget):
     def __init__(self):
