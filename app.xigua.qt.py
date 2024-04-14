@@ -8,12 +8,15 @@ import threading
 import time
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import webbrowser
-from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget,QComboBox  
 from PyQt5.QtCore import Qt
-
+import logging  
+  
+# 配置日志记录器  
+logging.basicConfig(filename='xigua.log', level=logging.INFO, encoding='UTF-8', 
+                    format='%(asctime)s:%(levelname)s:%(message)s')
  
 # 全局唯一
 the_one_dict = {}
@@ -33,7 +36,7 @@ class MyGUI(QWidget):
         util =  Util()
         NEW_APP_VERSION = util.new_version()
 
-        self.setWindowTitle('西瓜视频下载@tt@qq:232400689')
+        self.setWindowTitle('西瓜视频下载@tt@          qq:232400689')
         self.resize(1400, 600)
 
         main_layout = QVBoxLayout(self)
@@ -138,7 +141,7 @@ class MyGUI(QWidget):
             else:
                 item_list = util.xigua_title_by_id(text[:19])
         else:
-            print('错误的url')
+            logging.info('错误的url')
             return
         
         self.simulated_data = []
@@ -157,7 +160,7 @@ class MyGUI(QWidget):
             ids = list(set( [ item['id']  for item in  selected_rows]) - set(download_ids))
             video_array = []
             if len(ids) == 0:
-                print('没有新增的数据')
+                logging.info('没有新增的数据')
                 return
             else:
                 for index,id in enumerate(ids):
@@ -219,27 +222,27 @@ class MyGUI(QWidget):
             target_path = os.path.join(base_path,filename)
 
             if os.path.exists(target_path):
-                print(f"{target_path}已下载，不重复下载")
+                logging.info(f"{target_path}已下载，不重复下载")
                 self.updateStatus(id,f"已下载，不重复下载")
-                break
+                continue
 
 
             os.makedirs(base_path, exist_ok=True)
             # response = requests.get(url, stream=True, timeout=500,headers=headers)
             total_size = video_data_target['size']
-            print('调用下载')
+            logging.info('调用下载')
             flag =  self.download_video(url,target_path,total_size,id)
             if flag:
                 self.updateStatus(id,f"下载完成")
             else:
                 self.updateStatus(id,f"下载异常")
 
-            print('任务完成')
+            logging.info('任务完成')
 
             # os.rename(source_path,target_path)
 
 
-    def download_video_part(self,url, start_byte, end_byte, filename):  
+    def download_video_part(self,url, start_byte, end_byte, part_filename,total_size,output_filename):  
         headers = {
             'authority': 'v9-p-xg-web-pc.ixigua.com',
             'pragma': 'no-cache',
@@ -261,18 +264,18 @@ class MyGUI(QWidget):
         response = self.send_request_with_retry(url,headers)  
 
         if response == None:
-            print(f"多次重试下载失败")  
+            logging.info(f"多次重试下载失败")  
             return False
         
         if response.status_code == 206:  
-            with open(filename, 'wb') as f:  
+            with open(part_filename, 'wb') as f:  
                 for chunk in response.iter_content(1024):  
                     if chunk:  
                         f.write(chunk)  
-            print(f"视频部分 {start_byte}-{end_byte} 下载完成")  
+            logging.info(f"视频 {output_filename} {round((end_byte/total_size) * 100, 2)}%")  
             return True
         else:  
-            print(f"下载部分失败，状态码: {response.status_code}")  
+            logging.info(f"下载部分失败，状态码: {response.status_code}")  
             return False
   
 
@@ -283,18 +286,20 @@ class MyGUI(QWidget):
                 response.raise_for_status()  # 如果响应状态码不是 200，则抛出 HTTPError 异常  
                 return response  
             except (requests.RequestException, requests.HTTPError) as e:  
-                print(f"Request failed: {e}, retrying... ({attempt + 1}/{retries})")  
+                logging.info(f"Request failed: {e}, retrying... ({attempt + 1}/{retries})")  
                 time.sleep(backoff_factor * (2 ** attempt))  # 指数退避策略  
-        print("Max retries exceeded with url: %s" % url)  
+        logging.info("Max retries exceeded with url: %s" % url)  
         return None  
 
     def download_video(self,url, output_filename,total_size,id):  
+        # 记录开始时间  
+        start_time = time.time()  
         # 
-        print('发起一个HEAD请求来获取视频的总大小')
+        logging.info('发起一个HEAD请求来获取视频的总大小')
         head_response = requests.head(url)  
-        print(f'HEAD请求 head_response.status_code = {head_response.status_code}')
+        logging.info(f'HEAD请求 head_response.status_code = {head_response.status_code}')
         if head_response.status_code != 200:  
-            part_size = 1024 * 1024  # 1MB per part  
+            part_size = 1024 * 1024 # 1MB per part  
             
             # 计算需要下载的部分数量  
             num_parts = (total_size + part_size - 1) // part_size  
@@ -309,8 +314,8 @@ class MyGUI(QWidget):
                 start_byte = part_num * part_size  
                 end_byte = min(start_byte + part_size - 1, total_size - 1)  
                 part_filename = os.path.join(temp_dir, f"video_part_{part_num}.mp4")  
-                self.download_video_part(url, start_byte, end_byte, part_filename)  
-                percentage = round((part_num/num_parts) * 100, 2)
+                percentage = round((end_byte/total_size) * 100, 2)
+                self.download_video_part(url, start_byte, end_byte, part_filename,total_size,output_filename)  
                 self.updateStatus(id,f"已下载 {percentage}%")
 
             
@@ -328,11 +333,16 @@ class MyGUI(QWidget):
                 os.rmdir(temp_dir)  
             except OSError:  
                 pass  # 目录可能不空，忽略错误  
+            # 记录结束时间  
+            end_time = time.time()  
             
-            print(f"视频下载完成: {output_filename}")  
+            # 计算并打印耗时  
+            elapsed_time = end_time - start_time  
+
+            logging.info(f"视频下载完成: {output_filename} 耗时约 {elapsed_time:.2f} 秒")  
             return True
         else:
-            print(f"请求视频size异常 url={url}")  
+            logging.info(f"请求视频size异常 url={url}")  
             return False
 
 
@@ -359,7 +369,7 @@ class MyGUI(QWidget):
                 selected_p_data = self.view_table.cellWidget(row, 4).currentText()
                 selected_rows.append({'id':selected_data[0],'p':selected_p_data})
 
-        print("选中行的数据：", selected_rows)
+        logging.info("选中行的数据：", selected_rows)
 
         # 将选中的数据添加到下载列表表格中
         self.updateTable(self.download_table,selected_rows)
@@ -381,7 +391,7 @@ class MyGUI(QWidget):
 # 工具类
 class Util:
     def __init__(self):
-        print("Initializing...")
+        logging.info("Initializing...")
 
 
     # 存在两种情况，分别是有多P电视剧 和 没有多P
@@ -419,7 +429,7 @@ class Util:
 
         if match:
             json_content_str = match.group(1)
-            # print(json_content_str)
+            # logging.info(json_content_str)
             output_string = json_content_str.replace('undefined', '{}')
 
             json_content = json.loads(output_string)
@@ -477,7 +487,7 @@ class Util:
                                 })
             return res    
         else:
-            print("未找到匹配的部分")
+            logging.info("未找到匹配的部分")
             return []
 
 
