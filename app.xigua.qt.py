@@ -23,7 +23,7 @@ the_one_dict = {}
 download_ids = []
 
 NEW_APP_VERSION = None
-THIS_APP_VERSION = 'v1.4.2' 
+THIS_APP_VERSION = 'v1.4.3' 
 
 class MyGUI(QWidget):
     def __init__(self):
@@ -36,7 +36,7 @@ class MyGUI(QWidget):
         util =  Util()
         NEW_APP_VERSION = util.new_version()
 
-        self.setWindowTitle('西瓜视频下载@tt@          qq:232400689')
+        self.setWindowTitle(f'西瓜视频下载@tt@{THIS_APP_VERSION}        qq:232400689')
         self.resize(1400, 600)
 
         main_layout = QVBoxLayout(self)
@@ -191,7 +191,7 @@ class MyGUI(QWidget):
                 table.setItem(row, 1, QTableWidgetItem(id))
                 table.setItem(row, 2, QTableWidgetItem(title))
                 table.setItem(row, 3, QTableWidgetItem(publish_time))
-                sorted_videos = sorted(definition_list, key=lambda item: int(item.rstrip('p')))  
+                sorted_videos = sorted(definition_list, key=lambda item: int(item.rstrip('p')), reverse=True)  
 
                 # 创建一个 QComboBox 并添加选项  
                 combo_box = QComboBox()  
@@ -542,7 +542,7 @@ class Util:
             # 当前路径：anyVideo.gidInformation.packerData.videoResource.normal.video_list.video_3.main_url
 
             video_list = self.search_key_in_json(json_content,'video_list')
-            video_data =next(obj  for obj in video_list.values() if obj['definition'] == video_data_['p'])
+            video_data =next((obj for obj in video_list.values() if obj['definition'] == video_data_['p']), list(video_list.values())[len(video_list.values() )- 1])
             main_url  = video_data['main_url']
             decoded_url = base64.b64decode(main_url).decode('utf-8')
             video_data['main_url'] = decoded_url
