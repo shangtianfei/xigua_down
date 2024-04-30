@@ -1,6 +1,8 @@
 import base64
 import json
-import math
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+import base64
 import os
 import re
 import sys
@@ -11,11 +13,10 @@ import webbrowser
 import requests
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication,QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTabWidget,QComboBox  
-from PyQt5.QtCore import Qt
 import logging  
   
 # 配置日志记录器  
-logging.basicConfig(filename='xigua.log', level=logging.INFO, encoding='UTF-8', 
+logging.basicConfig(filename=f'xigua.{datetime.today().date().strftime("%Y%m%d")}.log',level=logging.INFO, encoding='UTF-8', 
                     format='%(asctime)s:%(levelname)s:%(message)s')
  
 # 全局唯一
@@ -23,7 +24,7 @@ the_one_dict = {}
 download_ids = []
 
 NEW_APP_VERSION = None
-THIS_APP_VERSION = 'v1.4.3' 
+THIS_APP_VERSION = 'v1.5.0' 
 
 class MyGUI(QWidget):
     def __init__(self):
@@ -210,6 +211,8 @@ class MyGUI(QWidget):
 
 
 
+
+
     def xigua_download_list(self,video_array):
         util = Util()
         base_path = 'download'
@@ -232,6 +235,7 @@ class MyGUI(QWidget):
             total_size = video_data_target['size']
             logging.info('调用下载')
             flag =  self.download_video(url,target_path,total_size,id)
+            # flag =  self.download_file(url,target_path)
             if flag:
                 self.updateStatus(id,f"下载完成")
             else:
@@ -244,22 +248,22 @@ class MyGUI(QWidget):
 
     def download_video_part(self,url, start_byte, end_byte, part_filename,total_size,output_filename):  
         headers = {
-            'authority': 'v9-p-xg-web-pc.ixigua.com',
-            'pragma': 'no-cache',
-            'cache-control': 'no-cache',
-            'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="98"',
-            'sec-ch-ua-mobile': '?0',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.139 Safari/537.36',
-            'sec-ch-ua-platform': '"Windows"',
             'accept': '*/*',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+            'cache-control': 'no-cache',
             'origin': 'https://www.ixigua.com',
-            'sec-fetch-site': 'same-site',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-dest': 'empty',
+            'pragma': 'no-cache',
+            'range': f'bytes={start_byte}-{end_byte}',
             'referer': 'https://www.ixigua.com/',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            'range': f'bytes={start_byte}-{end_byte}'
-            } 
+            'sec-ch-ua': '"Microsoft Edge";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-site',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0'
+            }
+
         
         response = self.send_request_with_retry(url,headers)  
 
@@ -267,12 +271,15 @@ class MyGUI(QWidget):
             logging.info(f"多次重试下载失败")  
             return False
         
+        if response.status_code == 416:  
+            return True
+        
         if response.status_code == 206:  
             with open(part_filename, 'wb') as f:  
                 for chunk in response.iter_content(1024):  
                     if chunk:  
                         f.write(chunk)  
-            logging.info(f"视频 {output_filename} {round((end_byte/total_size) * 100, 2)}%")  
+            logging.info(f"视频 bytes={start_byte}-{end_byte} {output_filename} {round((end_byte/total_size) * 100, 2)}%")  
             return True
         else:  
             logging.info(f"下载部分失败，状态码: {response.status_code}")  
@@ -283,6 +290,8 @@ class MyGUI(QWidget):
         for attempt in range(retries):  
             try:  
                 response = requests.get(url, headers=headers, stream=True)  
+                if response.status_code == 416:
+                    return response
                 response.raise_for_status()  # 如果响应状态码不是 200，则抛出 HTTPError 异常  
                 return response  
             except (requests.RequestException, requests.HTTPError) as e:  
@@ -290,6 +299,15 @@ class MyGUI(QWidget):
                 time.sleep(backoff_factor * (2 ** attempt))  # 指数退避策略  
         logging.info("Max retries exceeded with url: %s" % url)  
         return None  
+
+
+    # 定义下载函数  
+    def download_file(self,url, filename, chunk_size=1024):  
+        response = requests.get(url, stream=True)  
+        total_size = int(response.headers.get('content-length', 0))  
+        with open(filename, 'wb') as f:  
+            for data in response.iter_content(chunk_size=chunk_size):  
+                f.write(data)  
 
     def download_video(self,url, output_filename,total_size,id):  
         # 记录开始时间  
@@ -302,7 +320,7 @@ class MyGUI(QWidget):
             part_size = 1024 * 1024 # 1MB per part  
             
             # 计算需要下载的部分数量  
-            num_parts = (total_size + part_size - 1) // part_size  
+            num_parts = total_size // part_size  
             
             # 创建临时目录来保存部分文件  
             temp_dir = f'/download/{id}'  
@@ -323,10 +341,11 @@ class MyGUI(QWidget):
             with open(output_filename, 'wb') as outfile:  
                 for part_num in range(num_parts):  
                     part_filename = os.path.join(temp_dir, f"video_part_{part_num}.mp4")  
-                    with open(part_filename, 'rb') as partfile:  
-                        outfile.write(partfile.read())  
-                    # 删除已合并的部分文件以释放空间  
-                    os.remove(part_filename)  
+                    if os.path.exists(part_filename):
+                        with open(part_filename, 'rb') as partfile:  
+                            outfile.write(partfile.read())  
+                        # 删除已合并的部分文件以释放空间  
+                        os.remove(part_filename)  
             
             # 删除临时目录（如果它是空的）  
             try:  
@@ -394,7 +413,7 @@ class Util:
         logging.info("Initializing...")
 
 
-    # 存在两种情况，分别是有多P电视剧 和 没有多P
+    # 存在两种情况，分别是有多P电视剧 和 没有多P 
     # url = "https://www.ixigua.com/6719270659400155659?wid_try=1"
     # url = "https://www.ixigua.com/7322803456891486730?wid_try=1"
     def xigua_title_by_id(self,id):
@@ -431,7 +450,7 @@ class Util:
             json_content_str = match.group(1)
             # logging.info(json_content_str)
             output_string = json_content_str.replace('undefined', '{}')
-
+            logging.info(f'{id}=>{output_string}')
             json_content = json.loads(output_string)
             video_list =  self.search_key_in_json(json_content,'video_list')
             definition_list = [x.get('definition', 'No definition provided') for x in video_list.values()]
@@ -540,16 +559,38 @@ class Util:
 
             json_content = json.loads(output_string)
             # 当前路径：anyVideo.gidInformation.packerData.videoResource.normal.video_list.video_3.main_url
+            
+            video_list = []
+            videoResource = self.search_key_in_json(json_content,'videoResource')
+            dash = videoResource['dash'] 
+            video_list = self.search_key_in_json(dash,'dynamic_video_list')
 
-            video_list = self.search_key_in_json(json_content,'video_list')
-            video_data =next((obj for obj in video_list.values() if obj['definition'] == video_data_['p']), list(video_list.values())[len(video_list.values() )- 1])
+            if dash == None or dash == {}:
+                dash = videoResource['normal'] 
+
+            if video_list == None or video_list == []:
+                video_list = list(dash['video_list'].values())
+
+            ptk = dash['ptk']
+            video_data =next((obj for obj in video_list  if obj['definition'] == video_data_['p']), list(video_list )[len(video_list  )- 1])
             main_url  = video_data['main_url']
-            decoded_url = base64.b64decode(main_url).decode('utf-8')
-            video_data['main_url'] = decoded_url
+            dec_url =  self.aes_decrypt(main_url,ptk)
+            video_data['main_url'] = dec_url
+            logging.info(f'解码结果-> {json.dumps(video_data)}')
 
         return video_data
 
+    def aes_decrypt(self,data: str, key: str) -> str:
+        data = base64.b64decode(data)
+        key = key.encode()
+        iv = key[:16]
 
+        # mode 为 CBC、pad 为 PKcs7
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        res = cipher.decrypt(data)
+        res = unpad(res, AES.block_size)
+        res = base64.b64decode(res).decode()
+        return res
  
     def search_key_in_json(self,data, search_key):
         if isinstance(data, dict):
